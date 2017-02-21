@@ -38,7 +38,9 @@ metadata {
     
     preferences {
        input "RelaySwitchDelay", "decimal", title: "Delay between relay switch on and off in seconds. Only Numbers 0 to 3.0 allowed. 0 value will remove delay and allow relay to function as a standard switch", description: "Numbers 0 to 3.1 allowed.", defaultValue: 0, required: false, displayDuringSetup: true
-    }
+       input(name: "TriggerMapping", type: "enum", title: "Input to Relay Mapping", description: "Select whether relay is controlled by Z-Wave or SIG1 trigger.", defaultValue: "Z-Wave", options: ["Z-Wave", "SIG1"], required: false, displayDuringSetup: true)
+       input "AutoShutoffTimeout", "decimal", title: "Auto Shutoff Time in seconds" , description: "Time before automatic clearing of relay. -1 to disable.", defaultValue: -1, required: false
+	}
 
 
 	// UI tile definitions 
@@ -48,8 +50,8 @@ metadata {
 			state "off", label: 'Off', action: "on", icon: "http://swiftlet.technology/wp-content/uploads/2016/06/Switch-Off-104-edit.png", backgroundColor: "#ffffff"
         }
         standardTile("contact", "device.contact", width: 2, height: 2, inactiveLabel: false) {
-			state "active", label: '${name}', icon: "st.contact.contact.open", backgroundColor: "#ffa81e"
-			state "inactive", label: '${name}', icon: "st.contact.contact.closed", backgroundColor: "#79b821"
+			state "open", label: '${name}', icon: "st.contact.contact.open", backgroundColor: "#ffa81e"
+			state "closed", label: '${name}', icon: "st.contact.contact.closed", backgroundColor: "#79b821"
 		}
         standardTile("refresh", "device.switch", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
 			state "default", label:'', action:"refresh.refresh", icon:"st.secondary.refresh"
@@ -98,6 +100,7 @@ def updated() {
 	log.debug "Settings Updated..."
     configure()
 }
+    
 //notes about zwaveEvents:
 // these are special overloaded functions which MUST be returned with a map similar to (return [name: "switch", value: "on"])
 // not doing so will produce a null on the parse function, this will mess you up in the future.
@@ -106,6 +109,9 @@ def zwaveEvent(physicalgraph.zwave.commands.switchbinaryv1.SwitchBinaryReport cm
 log.debug "switchBinaryReport ${cmd}"
     if (cmd.value) // if the switch is on it will not be 0, so on = true
     {
+        if (AutoShutoffTimeout > -1) {
+            runIn(AutoShutoffTimeout, autoShutoff)
+        }
 		return [name: "switch", value: "on"] // change switch value to on
     }
     else // if the switch sensor report says its off then do...
@@ -128,7 +134,7 @@ def zwaveEvent(physicalgraph.zwave.commands.sensorbinaryv1.SensorBinaryReport cm
 {
 	log.debug "sent a sensorBinaryReport command"
 	refresh()    
-	[name: "contact", value: cmd.sensorValue ? "active" : "inactive"]
+	[name: "contact", value: cmd.sensorValue ? "open" : "closed"]
 }
 
 
@@ -187,10 +193,11 @@ def on() {
 	delayBetween([
 		zwave.basicV1.basicSet(value: 0xFF).format(),	// physically changes the relay from on to off and requests a report of the relay
         refresh()// to make sure that it changed (the report is used elsewhere, look for switchBinaryReport()
-       ])
+    ])
 }
 
 def off() {
+	log.debug "off"
 	delayBetween([
 		zwave.basicV1.basicSet(value: 0x00).format(), // physically changes the relay from on to off and requests a report of the relay
         refresh()// to make sure that it changed (the report is used elsewhere, look for switchBinaryReport()
@@ -205,3 +212,8 @@ log.debug "REFRESH!"
 
     ])
 }
+
+def autoShutoff() {
+    log.debug "Auto Shuttoff"
+    off()
+    }
